@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.net.SocketTimeoutException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -233,6 +234,12 @@ public class DefaultAcsClient implements IAcsClient {
     private <T extends AcsResponse> HttpResponse doAction(AcsRequest<T> request, boolean autoRetry, int maxRetryNumber,
                                                           String regionId, AlibabaCloudCredentials credentials, Signer signer, FormatType format)
             throws ClientException, ServerException {
+
+        doActionWithProxy(request.getSysProtocol(),
+                System.getenv("HTTPS_PROXY"), System.getenv("HTTP_PROXY"));
+        doActionWithIgnoreSSL(request, X509TrustAll.ignoreSSLCerts);
+        repairTransferMethod(request);
+
         Logger logger = clientProfile.getLogger();
         String startTime = "";
         String timeCost = "";
@@ -364,6 +371,38 @@ public class DefaultAcsClient implements IAcsClient {
         } else {
             context.setResponseMap(reader.read(stringContent, responseEndpoint));
             return error.getInstance(context);
+        }
+    }
+
+    /**
+     * Compatible with previous versions of proxy Settings
+     */
+    public void doActionWithProxy(ProtocolType protocolType, String httpsProxy, String httpProxy) {
+        HttpClientConfig config = this.clientProfile.getHttpClientConfig();
+        if (protocolType == ProtocolType.HTTP && httpProxy != null) {
+            config.setHttpProxy(httpProxy);
+            return;
+        }
+        if (protocolType == ProtocolType.HTTPS && httpsProxy != null) {
+            config.setHttpsProxy(httpsProxy);
+            return;
+        }
+    }
+
+    /**
+     * Compatible with previous versions of SSL Settings
+     */
+    public void doActionWithIgnoreSSL(AcsRequest request, boolean isIgnore) {
+        if (isIgnore) {
+            request.setIgnoreSSLCerts(true);
+        }
+    }
+
+    public void repairTransferMethod(AcsRequest request) {
+        MethodType methodType = request.getSysMethod();
+        Map bodyParameter = request.getSysBodyParameters();
+        if (methodType == MethodType.GET && bodyParameter.size() > 0) {
+            request.setSysMethod(MethodType.POST);
         }
     }
 
